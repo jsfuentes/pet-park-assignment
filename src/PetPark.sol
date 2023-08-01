@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 enum AnimalType {
-    Invalid,
+    None,
     Fish,
     Cat,
     Dog,
@@ -9,9 +9,15 @@ enum AnimalType {
     Parrot
 }
 
+enum Gender {
+    None,
+    Male,
+    Female
+}
+
 struct Identity {
     uint age;
-    bool is_male_gender;
+    Gender gender;
     bool is_valid;
 }
 
@@ -22,15 +28,6 @@ contract PetPark {
     mapping(AnimalType => uint) public animals;
     mapping(address => AnimalType) public addressIsBorrowing;
     mapping(address => Identity) public addressToIdentity;
-
-    //could be unneccessary
-    modifier validAnimalType(AnimalType animal_type) {
-        require(
-            1 <= uint(animal_type) && animal_type <= type(AnimalType).max,
-            "Invalid animal type"
-        );
-        _;
-    }
 
     modifier onlyOwner() {
         require(msg.sender == owner, "caller must be owner");
@@ -45,47 +42,56 @@ contract PetPark {
 
     event Added(AnimalType animal_type, uint animal_count);
 
-    function add(
-        AnimalType animal_type,
-        uint count
-    ) public onlyOwner validAnimalType(animal_type) {
+    function add(AnimalType animal_type, uint count) public onlyOwner {
+        require(
+            1 <= uint(animal_type) && animal_type <= type(AnimalType).max,
+            "Invalid animal"
+        );
         animals[animal_type] += count;
         emit Added(animal_type, count);
     }
 
-    error InvalidIdentity();
-
     event Borrowed(AnimalType animal_type);
 
-    function borrow(
-        uint age,
-        bool is_male_gender,
-        AnimalType animal_type
-    ) public validAnimalType(animal_type) {
+    function borrow(uint age, Gender gender, AnimalType animal_type) public {
         require(
-            is_male_gender &&
-                (animal_type == AnimalType.Dog ||
-                    animal_type == AnimalType.Fish),
-            "Males can only borrow Dogs and Fish"
+            1 <= uint(animal_type) && animal_type <= type(AnimalType).max,
+            "Invalid animal type"
+        );
+        require(age > 0, "age must be greater than 0");
+        require(animals[animal_type] > 0, "Selected animal not available");
+        require(
+            !addressToIdentity[msg.sender].is_valid ||
+                (addressToIdentity[msg.sender].is_valid &&
+                    addressToIdentity[msg.sender].gender == gender),
+            "Invalid Gender"
         );
         require(
-            !is_male_gender && age < 40 && animal_type != AnimalType.Cat,
-            "Women under 40 cant borrow Cat"
+            !addressToIdentity[msg.sender].is_valid ||
+                (addressToIdentity[msg.sender].is_valid &&
+                    addressToIdentity[msg.sender].age == age),
+            "Invalid Age"
         );
         require(
-            addressIsBorrowing[msg.sender] != AnimalType.Invalid,
-            "Address is already borrowing"
+            addressIsBorrowing[msg.sender] == AnimalType.None,
+            "Already adopted a pet"
         );
-        require(animals[animal_type] > 0, "No animals of this type left");
-        if (
-            addressToIdentity[msg.sender].is_valid &&
-            (addressToIdentity[msg.sender].age != age ||
-                addressToIdentity[msg.sender].is_male_gender != is_male_gender)
-        ) {
-            revert InvalidIdentity();
-        }
+        require(
+            gender == Gender.Female ||
+                (gender == Gender.Male &&
+                    (animal_type == AnimalType.Dog ||
+                        animal_type == AnimalType.Fish)),
+            "Invalid animal for men"
+        );
+        require(
+            gender == Gender.Male ||
+                (gender == Gender.Female &&
+                    age < 40 &&
+                    animal_type != AnimalType.Cat),
+            "Invalid animal for women under 40"
+        );
 
-        addressToIdentity[msg.sender] = Identity(age, is_male_gender, true);
+        addressToIdentity[msg.sender] = Identity(age, gender, true);
         addressIsBorrowing[msg.sender] = animal_type;
         animals[animal_type] -= 1;
         emit Borrowed(animal_type);
@@ -95,11 +101,15 @@ contract PetPark {
 
     function giveBackAnimal() public {
         require(
-            addressIsBorrowing[msg.sender] != AnimalType.Invalid,
-            "Address is not borrowing"
+            addressIsBorrowing[msg.sender] != AnimalType.None,
+            "No borrowed pets"
         );
-        addressIsBorrowing[msg.sender] = AnimalType.Invalid;
         animals[addressIsBorrowing[msg.sender]] += 1;
+        addressIsBorrowing[msg.sender] = AnimalType.None;
         emit Returned(addressIsBorrowing[msg.sender]);
+    }
+
+    function animalCounts(AnimalType animal_type) public view returns (uint) {
+        return animals[animal_type];
     }
 }
